@@ -1,5 +1,6 @@
 import os.path
 import datetime
+import sqlite3
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -10,7 +11,52 @@ from googleapiclient.errors import HttpError
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
-def add_event(service):
+path_to_db = '/Users/toprakbirben/Library/Application\ Support/Google/Chrome/Default/History'
+conn = sqlite3.connect('History.sql')
+cursor = conn.cursor()
+sql_query = "SELECT urls.title AS TITLE, datetime(last_visit_time/1000000-11644473600, \"unixepoch\") as last_visited,(visits.visit_duration / 3600 / 1000000) || ' hours ' || strftime('%M minutes %S seconds', visits.visit_duration / 1000000 / 86400.0) AS Duration \nFROM urls LEFT JOIN visits ON urls.id = visits.url"
+#SELECT urls.title AS TITLE, datetime(last_visit_time/1000000-11644473600, "unixepoch") as last_visited, (visits.visit_duration / 3600 / 1000000) || ' hours ' || strftime('%M minutes %S seconds', visits.visit_duration / 1000000 / 86400.0) AS Duration
+#FROM urls LEFT JOIN visits ON urls.id = visits.url
+
+#CHANGE THE VARIABLE DAYS TO SEARCH FROM 
+date_from = datetime.datetime.now() - datetime.timedelta(days=7) 
+date_to = datetime.datetime.now()
+
+
+
+#EXECUTES THE QUERY SPECIFIED IN THE GLOBAL VARIABLE SQL_QUERY
+def execute_query():
+   table = cursor.execute(sql_query)
+   return table
+
+#ADDS AN EVENT TO THE GOOGLE CALENDAR FROM CHROME HISTORY
+def add_event_from_history(service, table):
+    row = get_large_tab(service, table)
+    if not row:
+       print("Could not add an event from history")
+       return
+    
+    summary = row[0]
+    end_time = datetime.datetime.fromtimestamp(row[1]).strftime('%Y-%m-%dT%H:%M:%S')
+    duration = round(row[2] / 1000000) #DURATION
+    start_time = datetime.datetime.fromtimestamp(row[1] - duration).strftime('%Y-%m-%dT%H:%M:%S') 
+    description = "visited ${summary} for ${duration}" 
+
+    event = {
+        'summary': summary,
+        'start': {
+            'dateTime': start_time,
+            'timeZone': 'UTC',
+        },
+        'end': {
+            'dateTime': end_time,
+            'timeZone': 'UTC',
+        },
+        'description': description,
+    }
+    create_event = service.events().insert(calendarId='primary', body=event).execute()
+
+def add_event_from_terminal(service, table):
     summary = input("Enter the event summary: ")
     start_time = input("Enter the start time (YYYY-MM-DDTHH:MM:SS): ")
     end_time = input("Enter the end time (YYYY-MM-DDTHH:MM:SS): ")
@@ -30,8 +76,6 @@ def add_event(service):
     }
 
     created_event = service.events().insert(calendarId='primary', body=event).execute()
-
-    print(f"Event created: {created_event['htmlLink']}")
 
 def update_event(service):
     events = get_event(service)
@@ -87,6 +131,15 @@ def delete_event(service):
     service.events().delete(calendarId='primary', eventId=choice).execute()
     
     print(f"Event with ID {choice} has been successfully deleted.")
+
+def get_large_tab(service, table):
+    row = table.fetchone()
+    if row:
+        if row[2] / 1000000 > 3600 and row[2] > date_from.strftime("%f"): #CHECKS FOR THE DURATION. !! W.I.P. !!
+            return row
+        return None
+    else:
+       return None
 
 def get_event(service):
     now = datetime.datetime.now().isoformat() + 'Z'    
@@ -145,19 +198,9 @@ def main():
       start = event["start"].get("dateTime", event["start"].get("date"))
       print(start, event["summary"])
 
-    while True:
-        action = input("What would you like to do?\n1: Add Event\n2: Update Event\n3: Delete Event\n4: Exit\n")
-        if action == "1":
-            add_event(service)
-        elif action == "2":
-            update_event(service)
-        elif action == "3":
-            delete_event(service)
-        elif action == "4":
-            break
-        else:
-            print("Invalid input. Please try again.")
-            
+    sql_table = execute_query()
+    add_event_from_history(service, sql_table)
+
   except HttpError as error:
     print(f"An error occurred: {error}")
 
