@@ -1,18 +1,14 @@
-import os
-from google.oauth2 import service_account
+import os.path
+import datetime
+
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from datetime import datetime, timezone
+from googleapiclient.errors import HttpError
 
-# Path to your credentials JSON file
-credentials_path = 'path/to/credentials.json'
 
-# Load credentials from JSON file
-credentials = service_account.Credentials.from_service_account_file(credentials_path, scopes=['https://www.googleapis.com/auth/calendar'])
-
-# Build the Google Calendar service
-service = build('calendar', 'v3', credentials=credentials)
-
-SCOPES = ['https://www.googleapis.com/auth/calendar']
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 def add_event(service):
     summary = input("Enter the event summary: ")
@@ -93,43 +89,80 @@ def delete_event(service):
     print(f"Event with ID {choice} has been successfully deleted.")
 
 def get_event(service):
-    present = datetime.now(timezone.utc).isoformat()
-    events_list = service.events().list(calendarId='primary', timeMin=present, maxResults=10, singleEvents=True, orderBy='startTime').execute()
+    now = datetime.datetime.now().isoformat() + 'Z'    
+    events_list = service.events().list(calendarId='primary', timeMin=now, maxResults=10, singleEvents=True, orderBy='startTime').execute()
     events = events_list.get('items', [])
     return events
 
 def main():
-    # Start the OAuth flow to get new credentials
-    flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-    creds = flow.run_local_server(port=0)
-    
-    # Build the Google Calendar service
-    service = build('calendar', 'v3', credentials=creds)
-    
-    # Call the Calendar API
-    now = datetime.now(timezone.utc).isoformat()
-    
-    events_result = service.events().list(calendarId='primary', timeMin=now,
-                                          maxResults=10, singleEvents=True,
-                                          orderBy='startTime').execute()
-    events = events_result.get('items', [])
-    
-    if not events:
-        print('No upcoming events found.')
-    for event in events:
-        start = event['start'].get('dateTime', event['start'].get('date'))
-        print(start, event['summary'])
+  """Shows basic usage of the Google Calendar API.
+  Prints the start and name of the next 10 events on the user's calendar.
+  """
+  creds = None
+  # The file token.json stores the user's access and refresh tokens, and is
+  # created automatically when the authorization flow completes for the first
+  # time.
+  if os.path.exists("token.json"):
+    creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+  # If there are no (valid) credentials available, let the user log in.
+  if not creds or not creds.valid:
+    if creds and creds.expired and creds.refresh_token:
+      creds.refresh(Request())
+    else:
+      flow = InstalledAppFlow.from_client_secrets_file(
+          "credentials.json", SCOPES
+      )
+      creds = flow.run_local_server(port=0)
+    # Save the credentials for the next run
+    with open("token.json", "w") as token:
+      token.write(creds.to_json())
 
-    while(choice == None):
-        choice = input("1: Update\n2: Add\n3: Delete\n")
-        if choice == "1":
-            update_event(service)
-        elif choice == "2":
+  try:
+    service = build("calendar", "v3", credentials=creds)
+
+    # Call the Calendar API
+    now = datetime.datetime.now().isoformat() + 'Z'
+    print("Getting the upcoming 10 events")
+    events_result = (
+        service.events()
+        .list(
+            calendarId="primary",
+            timeMin=now,
+            maxResults=10,
+            singleEvents=True,
+            orderBy="startTime",
+        )
+        .execute()
+    )
+    events = events_result.get("items", [])
+
+    if not events:
+      print("No upcoming events found.")
+      return
+
+    # Prints the start and name of the next 10 events
+    for event in events:
+      start = event["start"].get("dateTime", event["start"].get("date"))
+      print(start, event["summary"])
+
+    while True:
+        action = input("What would you like to do?\n1: Add Event\n2: Update Event\n3: Delete Event\n4: Exit\n")
+        if action == "1":
             add_event(service)
-        elif choice == "3":
+        elif action == "2":
+            update_event(service)
+        elif action == "3":
             delete_event(service)
+        elif action == "4":
+            break
         else:
-            choice = None
-if __name__ == '__main__':
-    main()
+            print("Invalid input. Please try again.")
+            
+  except HttpError as error:
+    print(f"An error occurred: {error}")
+
+
+if __name__ == "__main__":
+  main()
+
 
