@@ -1,3 +1,3 @@
-# Third-party Calendar 
+# GoogleCalendar Automation 
 
-This project is aimed towards automating google calendar with google api and terminal inputs. 
+This project is aimed towards automating Google Calendar events with Calendar API and Chrome History database 
