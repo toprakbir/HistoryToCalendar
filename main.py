@@ -1,6 +1,8 @@
 import os.path
 import datetime
 import sqlite3
+from sqlite3 import OperationalError
+
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -11,50 +13,95 @@ from googleapiclient.errors import HttpError
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
-path_to_db = '/Users/toprakbirben/Library/Application\ Support/Google/Chrome/Default/History'
-conn = sqlite3.connect('History.sql')
+path_to_db = 'History'
+path_to_query = 'query.sql'
+conn = sqlite3.connect(path_to_db)
 cursor = conn.cursor()
-sql_query = "SELECT urls.title AS TITLE, datetime(last_visit_time/1000000-11644473600, \"unixepoch\") as last_visited,(visits.visit_duration / 3600 / 1000000) || ' hours ' || strftime('%M minutes %S seconds', visits.visit_duration / 1000000 / 86400.0) AS Duration \nFROM urls LEFT JOIN visits ON urls.id = visits.url"
-#SELECT urls.title AS TITLE, datetime(last_visit_time/1000000-11644473600, "unixepoch") as last_visited, (visits.visit_duration / 3600 / 1000000) || ' hours ' || strftime('%M minutes %S seconds', visits.visit_duration / 1000000 / 86400.0) AS Duration
-#FROM urls LEFT JOIN visits ON urls.id = visits.url
+
 
 #CHANGE THE VARIABLE DAYS TO SEARCH FROM 
-date_from = datetime.datetime.now() - datetime.timedelta(days=7) 
+date_from = int((datetime.datetime.now() - datetime.timedelta(days=7)).timestamp() ) * 1000000
+
 date_to = datetime.datetime.now()
 
 
+def filter_approximates(table):
+    filtered_table = [row for row in table if row[1] > date_from]
+    threshold = 1000000 * 60 * 60 # 1 hour in microseconds
+    filtered_table.sort(key=lambda x: x[1])
 
-#EXECUTES THE QUERY SPECIFIED IN THE GLOBAL VARIABLE SQL_QUERY
-def execute_query():
-   table = cursor.execute(sql_query)
-   return table
+    final_filtered_table = []
+    for i in range(len(filtered_table)):
+        if i == 0:
+            final_filtered_table.append(filtered_table[i])
+        else:
+            last_visit_time_diff = abs(filtered_table[i][1] - filtered_table[i-1][1])
+            if last_visit_time_diff > threshold:
+                final_filtered_table.append(filtered_table[i])
+
+    return final_filtered_table
+
+
+def execute_query_from_file(db_path, query_path):
+
+    if not os.path.exists(db_path):
+        print(f"Database file not found: {db_path}")
+        return
+    
+   # Read the query from the file
+    with open(query_path, 'r') as file:
+        query = file.read()
+
+    # Connect to the SQLite database
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    try:
+        # Execute the query
+        cursor.execute(query)
+        table = cursor.fetchall()
+        table = filter_approximates(table)
+        return table
+
+    except sqlite3.Error as e:
+        print(f"An error occurred: {e}")
+    finally:
+        # Close the connection
+        conn.close()
+   
 
 #ADDS AN EVENT TO THE GOOGLE CALENDAR FROM CHROME HISTORY
 def add_event_from_history(service, table):
-    row = get_large_tab(service, table)
-    if not row:
+    table = get_large_tab(table)
+    if not table:
        print("Could not add an event from history")
        return
-    
-    summary = row[0]
-    end_time = datetime.datetime.fromtimestamp(row[1]).strftime('%Y-%m-%dT%H:%M:%S')
-    duration = round(row[2] / 1000000) #DURATION
-    start_time = datetime.datetime.fromtimestamp(row[1] - duration).strftime('%Y-%m-%dT%H:%M:%S') 
-    description = "visited ${summary} for ${duration}" 
+    for row in table:
+        seconds = int(row[1]) / 1000000 - 11644473600
+        
+        start_time = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=seconds)
+        end_time = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=seconds) + datetime.timedelta(seconds = int(row[2]) / 1000000)
+        summary = row[0]
+        duration = row[2] / 1000000 / 3600 #DURATION
+        description = "visited " + str(summary) + " for " + str(duration) + " hours" 
 
-    event = {
-        'summary': summary,
-        'start': {
-            'dateTime': start_time,
-            'timeZone': 'UTC',
-        },
-        'end': {
-            'dateTime': end_time,
-            'timeZone': 'UTC',
-        },
-        'description': description,
-    }
-    create_event = service.events().insert(calendarId='primary', body=event).execute()
+        event = {
+            'summary': summary,
+            'start': {
+                'dateTime': start_time.isoformat(),
+                'timeZone': 'UTC',
+            },
+            'end': {
+                'dateTime': end_time.isoformat(),
+                'timeZone': 'UTC',
+            },
+            'description': description,
+        }
+        create_event = service.events().insert(calendarId='primary', body=event).execute()
+        if create_event:
+            print(f"Event succesfully created: {create_event['htmlLink']}")
+        else :
+            print("Could not add an event from history")
 
 def add_event_from_terminal(service, table):
     summary = input("Enter the event summary: ")
@@ -132,14 +179,14 @@ def delete_event(service):
     
     print(f"Event with ID {choice} has been successfully deleted.")
 
-def get_large_tab(service, table):
-    row = table.fetchone()
-    if row:
-        if row[2] / 1000000 > 3600 and row[2] > date_from.strftime("%f"): #CHECKS FOR THE DURATION. !! W.I.P. !!
-            return row
-        return None
-    else:
-       return None
+def get_large_tab(table):
+    large_tab = []
+    for row in table:
+        if row[2]:
+            if int(row[2]) > 3600000000 and row[1] > date_from:
+               large_tab.append(row)
+
+    return large_tab
 
 def get_event(service):
     now = datetime.datetime.now().isoformat() + 'Z'    
@@ -198,7 +245,8 @@ def main():
       start = event["start"].get("dateTime", event["start"].get("date"))
       print(start, event["summary"])
 
-    sql_table = execute_query()
+
+    sql_table = execute_query_from_file(path_to_db, path_to_query)
     add_event_from_history(service, sql_table)
 
   except HttpError as error:
