@@ -1,2 +1,7 @@
-google.oauth2
+google.auth.transport.requests
 googleapiclient.discovery
+google_auth_oauthlib.flow
+googleapiclient.errors
+sqlite3
+datetime
+os.path

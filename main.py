@@ -20,25 +20,22 @@ cursor = conn.cursor()
 
 
 #CHANGE THE VARIABLE DAYS TO SEARCH FROM 
-date_from = int((datetime.datetime.now() - datetime.timedelta(days=7)).timestamp() ) * 1000000
-
-date_to = datetime.datetime.now()
+comparison_date = datetime.datetime.now() - datetime.timedelta(days=7)
+date_to = int(datetime.datetime.now().timestamp()) * 1000000
 
 
 def filter_approximates(table):
-    filtered_table = [row for row in table if row[1] > date_from]
-    threshold = 1000000 * 60 * 60 # 1 hour in microseconds
-    filtered_table.sort(key=lambda x: x[1])
-
+    table.sort(key=lambda x: x[1])
     final_filtered_table = []
-    for i in range(len(filtered_table)):
-        if i == 0:
-            final_filtered_table.append(filtered_table[i])
-        else:
-            last_visit_time_diff = abs(filtered_table[i][1] - filtered_table[i-1][1])
-            if last_visit_time_diff > threshold:
-                final_filtered_table.append(filtered_table[i])
-
+    for i in range(len(table)):
+        start_time = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=int(table[i][1]) / 1000000 - 11644473600)
+        if start_time > comparison_date:
+            if i == 0:
+                final_filtered_table.append(table[i])
+            else:
+                if table[i][2]:
+                    if table[i][0] != table[i-1][0]:
+                        final_filtered_table.append(table[i])
     return final_filtered_table
 
 
@@ -83,7 +80,7 @@ def add_event_from_history(service, table):
         end_time = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=seconds) + datetime.timedelta(seconds = int(row[2]) / 1000000)
         summary = row[0]
         duration = row[2] / 1000000 / 3600 #DURATION
-        description = "visited " + str(summary) + " for " + str(duration) + " hours" 
+        description = str(summary) + " for " + str(duration) + " hours" 
 
         event = {
             'summary': summary,
@@ -98,10 +95,9 @@ def add_event_from_history(service, table):
             'description': description,
         }
         create_event = service.events().insert(calendarId='primary', body=event).execute()
-        if create_event:
-            print(f"Event succesfully created: {create_event['htmlLink']}")
-        else :
-            print("Could not add an event from history")
+        if not create_event:
+            print("Could not add an event from history")    
+    return
 
 def add_event_from_terminal(service, table):
     summary = input("Enter the event summary: ")
@@ -181,11 +177,11 @@ def delete_event(service):
 
 def get_large_tab(table):
     large_tab = []
+    threshold = 1000000 * 60 * 60
     for row in table:
         if row[2]:
-            if int(row[2]) > 3600000000 and row[1] > date_from:
+            if int(row[2]) > threshold:
                large_tab.append(row)
-
     return large_tab
 
 def get_event(service):
@@ -238,7 +234,6 @@ def main():
 
     if not events:
       print("No upcoming events found.")
-      return
 
     # Prints the start and name of the next 10 events
     for event in events:
