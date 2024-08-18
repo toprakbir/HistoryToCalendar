@@ -36,6 +36,10 @@ def filter_approximates(table):
                 if table[i][2]:
                     if table[i][0] != table[i-1][0]:
                         final_filtered_table.append(table[i])
+                    elif table[i][0] == table[i-1][0] and int(table[i][2]) > 1000000 * 60 * 60:
+                        altered_row = (table[i][0], table[i][1], int(table[i][2]) + int(table[i-1][2]))
+                        final_filtered_table.pop()
+                        final_filtered_table.append(altered_row)
     return final_filtered_table
 
 
@@ -76,8 +80,8 @@ def add_event_from_history(service, table):
     for row in table:
         seconds = int(row[1]) / 1000000 - 11644473600
         
-        start_time = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=seconds)
-        end_time = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=seconds) + datetime.timedelta(seconds = int(row[2]) / 1000000)
+        start_time = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=seconds) - datetime.timedelta(seconds = int(row[2]) / 1000000)
+        end_time = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=seconds)
         summary = row[0]
         duration = row[2] / 1000000 / 3600 #DURATION
         description = str(summary) + " for " + str(duration) + " hours" 
@@ -94,9 +98,10 @@ def add_event_from_history(service, table):
             },
             'description': description,
         }
+        print(str(event) + "\n")
         create_event = service.events().insert(calendarId='primary', body=event).execute()
         if not create_event:
-            print("Could not add an event from history")    
+           print("Could not add an event from history")    
     return
 
 def add_event_from_terminal(service, table):
