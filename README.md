@@ -15,6 +15,6 @@ This project aims to automate Google Calendar events with Calendar API and Chrom
 2) Figure out a way to dynamically locate history files in the computers' folder directory.
 3) Make sure that the last modification is more accurate than the older version.
 4) Since Chrome does not track if the tab was inactive during the duration period, the system cannot be 100% accurate on how long you have spent on that specific tab.
-5) I have no way of fixing this and it is suggested to close the tab as soon as you are done with the tab to avoid hours and days long duration periods.
-
+  4.a) I have no way of fixing this and it is suggested to close the tab as soon as you are done with the tab to avoid hours and days long duration periods
+5) Issue with requirements.txt: will be issued a fix right after the Christmas break as the main project lies within my old computer.
 
